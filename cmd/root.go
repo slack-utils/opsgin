@@ -159,7 +159,9 @@ func initConfig() {
 	viper.SetDefault("_opsgenie.messages.command.unknown", ":bangbang: Unknown command")
 	viper.SetDefault("_opsgenie.messages.fields.on_duty", "On duty")
 	viper.SetDefault("_opsgenie.messages.fields.priority", "Priority")
+	viper.SetDefault("_opsgenie.messages.fields.priority_p1_after", "P1 after _time_")
 	viper.SetDefault("_opsgenie.priority", "P5")
+	viper.SetDefault("_opsgenie.priority_auto_increase", "90")
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	viper.SetEnvPrefix(pkg)
 

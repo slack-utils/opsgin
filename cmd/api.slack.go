@@ -36,8 +36,10 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 	"github.com/slack-go/slack"
@@ -178,14 +180,38 @@ func (s *Schedules) slackGetAttachmentAction(action ...string) []slack.Attachmen
 	return actionList
 }
 
-func (s *Schedules) slackGetAttachmentFields(priority, duty string) []slack.AttachmentField {
-	return []slack.AttachmentField{
+func (s *Schedules) slackGetAttachmentFields(priority, duty string, priorityAutoIncrease int) []slack.AttachmentField {
+	attachmentField := []slack.AttachmentField{
 		{Short: true, Title: viper.GetString("_opsgenie.messages.fields.priority"), Value: priority},
 		{Short: true, Title: viper.GetString("_opsgenie.messages.fields.on_duty"), Value: fmt.Sprintf("<@%s>", duty)},
 	}
+
+	if priorityAutoIncrease > 0 {
+		attachmentField = append(
+			attachmentField,
+			slack.AttachmentField{
+				Short: true,
+				Title: strings.Replace(
+					viper.GetString("_opsgenie.messages.fields.priority_p1_after"),
+					"_time_",
+					fmt.Sprintf("%02d:%02d", priorityAutoIncrease/60, priorityAutoIncrease%60),
+					-1,
+				),
+			},
+		)
+	}
+
+	return attachmentField
 }
 
 func (s *Schedules) slackWatchEvents() {
+	priority_auto_increase, err := strconv.Atoi(viper.GetString("_opsgenie.priority_auto_increase"))
+	if err != nil {
+		s.log.Fatal(err)
+	}
+
+	priority_auto_increase_alert := make(map[string]bool)
+
 	for envelope := range s.sm.Events {
 		switch envelope.Type {
 		case
@@ -217,7 +243,7 @@ func (s *Schedules) slackWatchEvents() {
 		}
 
 		slackAttachmentAction := s.slackGetAttachmentAction("alert_increase_priority", "alert_acknowledge", "alert_close")
-		slackAttachmentField := s.slackGetAttachmentFields(viper.GetString("_opsgenie.priority"), s.list[0].duty[0])
+		slackAttachmentField := s.slackGetAttachmentFields(viper.GetString("_opsgenie.priority"), s.list[0].duty[0], priority_auto_increase)
 		slackAttachmentColor := "warning"
 		slackResponse := viper.GetString("_opsgenie.messages.alert_create.success")
 
@@ -226,7 +252,9 @@ func (s *Schedules) slackWatchEvents() {
 			payload, _ := envelope.Data.(slack.InteractionCallback)
 			data := strings.Split(payload.CallbackID, ";")
 
-			slackAttachmentField = s.slackGetAttachmentFields(data[1], s.list[0].duty[0])
+			slackAttachmentField = s.slackGetAttachmentFields(data[1], s.list[0].duty[0], 0)
+
+			delete(priority_auto_increase_alert, data[0])
 
 			switch payload.ActionCallback.AttachmentActions[0].Value {
 			case "alert_close":
@@ -254,7 +282,7 @@ func (s *Schedules) slackWatchEvents() {
 			case "alert_increase_priority":
 				data[1] = "P1"
 
-				slackAttachmentField = s.slackGetAttachmentFields(data[1], s.list[0].duty[0])
+				slackAttachmentField = s.slackGetAttachmentFields(data[1], s.list[0].duty[0], 0)
 				slackAttachmentColor = "danger"
 				slackResponse = viper.GetString("_opsgenie.messages.alert_increase_priority.success")
 
@@ -323,7 +351,7 @@ func (s *Schedules) slackWatchEvents() {
 				}
 
 				s.log.Debugf("sending slack.PostMessage to %s", event.User)
-				if _, _, err := s.slack.PostMessage(
+				_, respTS, err := s.slack.PostMessage(
 					event.Channel,
 					slack.MsgOptionTS(event.TimeStamp),
 					slack.MsgOptionAttachments(slack.Attachment{
@@ -333,9 +361,56 @@ func (s *Schedules) slackWatchEvents() {
 						Fields:     slackAttachmentField,
 						Text:       strings.Replace(slackResponse, "_user_", fmt.Sprintf("<@%s>", event.User), -1),
 					}),
-				); err != nil {
+				)
+				if err != nil {
 					s.log.Error(err)
 				}
+
+				go func() {
+					duty := s.list[0].duty[0]
+					priority := viper.GetString("_opsgenie.priority")
+					priority_auto_increase_alert[alertID] = true
+
+					for curTime := priority_auto_increase; curTime >= 0; curTime-- {
+						if !priority_auto_increase_alert[alertID] {
+							return
+						}
+
+						if curTime == 0 {
+							slackAttachmentColor = "danger"
+							priority = "P1"
+
+							if err := s.opsgenieIncreaseAlertPriority(alertID, priority); err != nil {
+								slackResponse = viper.GetString("_opsgenie.messages.alert_increase_priority.failure")
+
+								s.log.Errorf("can't close alert - %s", err.Error())
+							} else {
+								slackAttachmentAction = s.slackGetAttachmentAction("alert_acknowledge", "alert_close")
+							}
+						}
+
+						slackAttachmentField = s.slackGetAttachmentFields(priority, duty, curTime)
+
+						if curTime%5 == 0 {
+							_, _, _, err := s.slack.UpdateMessage(
+								event.Channel,
+								respTS,
+								slack.MsgOptionAttachments(slack.Attachment{
+									Actions:    slackAttachmentAction,
+									CallbackID: fmt.Sprintf("%s;%s", alertID, priority),
+									Color:      slackAttachmentColor,
+									Fields:     slackAttachmentField,
+									Text:       slackResponse,
+								}),
+							)
+							if err != nil {
+								s.log.Error(err)
+							}
+						}
+
+						time.Sleep(1 * time.Second)
+					}
+				}()
 			}
 
 		case socketmode.EventTypeSlashCommand:
