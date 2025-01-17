@@ -1,0 +1,23 @@
+FROM golang:1.22.4-alpine3.20 as build
+
+ENV CI=true \
+    CGO_ENABLED=0 \
+    GO111MODULE=on \
+    GOPRIVATE=github.com/slack-utils/*
+
+WORKDIR /app
+
+ADD . .
+
+RUN --mount=type=secret,id=github_token,env=GH_TOKEN \
+    --mount=type=secret,id=package_secret,env=PACKAGE_SECRET \
+    apk add --no-cache git && \
+    git config --global url."https://${GH_TOKEN}@github.com/".insteadOf "https://github.com/" && \
+    go install -v github.com/go-task/task/v3/cmd/task@latest && \
+    task build -f
+
+FROM alpine:3.15
+
+COPY --from=build /app/build/package /
+
+ENTRYPOINT ["/usr/local/sbin/opsgin"]

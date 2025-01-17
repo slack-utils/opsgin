@@ -1,0 +1,27 @@
+# sync mode
+# slack_user_group_name1:
+#   - opsgenie schedule name 1
+#   - additional.user@num1
+#   - additional.user@num2
+# slack_user_group_name2:
+#   - opsgenie schedule name 2
+#   - additional.user@num1
+#   - additional.user@num2
+
+# daemon mode
+# slack_app_name1:
+#   opsgenie:
+#     api_key: opsgenie api key 1
+#     schedule: opsgenie schedule name 1
+#   slack:
+#     api_key: xoxb-***
+#     app_key: xapp-***
+#     user_group: user group name 1
+# slack_app_name2:
+#   opsgenie:
+#     api_key: opsgenie api key 2
+#     schedule: opsgenie schedule name 2
+#   slack:
+#     api_key: xoxb-***
+#     app_key: xapp-***
+#     user_group: user group name 2

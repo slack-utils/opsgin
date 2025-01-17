@@ -1,0 +1,80 @@
+# https://taskfile.dev
+
+version: "3"
+
+vars:
+  PACKAGE: opsgin
+  PROJECT: github.com/slack-utils/opsgin
+  BUILD_DEST: build/package
+  CI: '{{.CI | default ""}}'
+  GIT_COMMIT:
+    sh: git log -n 1 --format=%h
+  GIT_BRANCH:
+    sh: git rev-list --tags --max-count=1 | xargs git describe --tags
+  TIME:
+    sh: date +%s
+  VERSION: '{{if ne .CI ""}}{{.GIT_BRANCH}}-{{.GIT_COMMIT}}{{else}}{{.TIME}}{{end}}'
+  GOOS: '{{if ne .CI ""}}linux{{else}}{{.GOOS}}{{end}}'
+
+tasks:
+  default:
+    deps: [build]
+    cmds:
+      - "{{.BUILD_DEST}}/usr/local/sbin/{{.PACKAGE}} {{.args}}"
+
+  build:
+    desc: Build cmd {{.PACKAGE}}
+    env:
+      GOOS: "{{.GOOS}}"
+      GOARCH: amd64
+      CGO_ENABLED: "0"
+      GO111MODULE: "on"
+    deps:
+      - task: cleanup-bin
+    cmds:
+      - cmd: >
+          go build -o {{.BUILD_DEST}}/usr/local/sbin/{{.PACKAGE}}
+          -ldflags "
+          -X main.key={{.PACKAGE_SECRET}}
+          -X {{.PROJECT}}/cmd.version={{.VERSION}}
+          " {{.PROJECT}}
+    sources:
+      - ./**/*.yaml
+      - ./**/*.go
+
+  docker:
+    desc: Build docker image with cmd {{.PACKAGE}}
+    cmds:
+      - task: docker-base
+        vars: { name: server, image: opsgin/opsgin }
+
+  docker-base:
+    deps:
+      - task: cleanup-docker
+        vars: { image: "{{.image}}" }
+    cmds:
+      - cmd: >
+          docker build --rm
+          --secret id=github_token,env=GH_TOKEN
+          --secret id=package_secret,env=PACKAGE_SECRET
+          -f docker/Dockerfile.linux.amd64
+          -t {{.image}} .
+      - cmd: >
+          docker tag {{.image}} {{.image}}:{{.VERSION}}
+      - cmd: >
+          docker login -u="$DOCKER_USERNAME" -p="$DOCKER_PASSWORD"
+      - cmd: >
+          docker push {{.image}}
+      - cmd: >
+          docker push {{.image}}:{{.VERSION}}
+
+  cleanup-bin:
+    cmds:
+      - cmd: rm -rf {{.BUILD_DEST}}/usr/local/sbin/{{.PACKAGE}}
+
+  cleanup-docker:
+    cmds:
+      - cmd: docker rmi -f {{.image}}
+        ignore_error: true
+      - cmd: docker rmi -f {{.image}}:{{.VERSION}}
+        ignore_error: true
