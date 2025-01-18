@@ -2,9 +2,10 @@ module github.com/slack-utils/opsgin
 
 go 1.22
 
-require github.com/slack-utils/opsgin-core v0.0.0-20250117205620-ea9dfdd26771
+require github.com/slack-utils/opsgin-core v0.0.0-20250118001345-e0b98640abba
 
 require (
+	github.com/beevik/ntp v1.4.3 // indirect
 	github.com/fsnotify/fsnotify v1.5.1 // indirect
 	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
@@ -26,9 +27,9 @@ require (
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.11.0 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/subosito/gotenv v1.2.0 // indirect
 	golang.org/x/exp v0.0.0-20230118134722-a68e582fa157 // indirect
+	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	gopkg.in/ini.v1 v1.66.4 // indirect
